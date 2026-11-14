@@ -295,50 +295,70 @@ namespace CampusNet
     }
 
     /// <summary>
-    /// "睡眠唤醒后自动重连"的计划任务：监听 System 日志里 Kernel-Power 事件 107（从睡眠恢复）。
-    /// 用 schtasks.exe 注册，不需要管理员权限（InteractiveToken / LeastPrivilege），可随时删除。
+    /// 用"计划任务"保证自动重连：两个事件触发任务，都不需要管理员权限。
+    ///   1) CampusNetAutoLogin_Wake  —— 睡眠/休眠唤醒（传统 S3 107、新型待机 507、通用恢复 1）
+    ///   2) CampusNetAutoLogin_Logon —— 用户登录（Winlogon 7001），作为 Run 键失效时的兜底
+    /// 用 schtasks.exe 注册；同一时刻只会有一个实例真正干活（程序内有单实例互斥 + 已在线则跳过）。
     /// </summary>
-    public static class WakeTask
+    public static class AutoTasks
     {
-        public const string TaskName = "CampusNetAutoLogin_Wake";
+        public const string WakeName = "CampusNetAutoLogin_Wake";
+        public const string LogonName = "CampusNetAutoLogin_Logon";
 
-        /// <summary>唤醒事件过滤器：覆盖传统睡眠(107)、新型待机(507)、以及通用的低功耗恢复(1)</summary>
+        /// <summary>唤醒：传统睡眠 107 / 新型待机(S0ix) 507 / 通用低功耗恢复 1</summary>
         public const string WakeFilter =
             "*[System[(Provider[@Name='Microsoft-Windows-Kernel-Power'] and (EventID=107 or EventID=507))" +
             " or (Provider[@Name='Microsoft-Windows-Power-Troubleshooter'] and EventID=1)]]";
 
-        public static bool Exists()
+        /// <summary>用户登录：Winlogon 7001</summary>
+        public const string LogonFilter =
+            "*[System[Provider[@Name='Microsoft-Windows-Winlogon'] and EventID=7001]]";
+
+        public static bool WakeExists() { return Exists(WakeName); }
+        public static bool LogonExists() { return Exists(LogonName); }
+
+        /// <summary>两个任务是否都齐全</summary>
+        public static bool AllExist() { return WakeExists() && LogonExists(); }
+
+        public static bool Exists(string name)
         {
-            return Run("/Query /TN \"" + TaskName + "\"", true) == 0;
+            return Run("/Query /TN \"" + name + "\"", true) == 0;
         }
 
-        public static bool Create(string exePath)
+        public static bool CreateWake(string exePath) { return Create(WakeName, WakeFilter, exePath); }
+        public static bool CreateLogon(string exePath) { return Create(LogonName, LogonFilter, exePath); }
+
+        static bool Create(string name, string filter, string exePath)
         {
-            // 107 = 传统 S3 睡眠恢复；507 = 退出"新型待机"(Modern Standby/S0ix)；
-            // Power-Troubleshooter 1 = 从低功耗状态恢复的通用事件。三个都监听才能覆盖各种机型。
-            string filter = WakeFilter;
-            // 注意：动作只写 exe，不带任何参数。
-            // 一是"无参数运行"本来就是立即连接模式，唤醒后正合适；
-            // 二是 schtasks 对带空格的 /TR 命令行解析很挑，去掉参数后引号问题彻底消失。
-            string args = "/Create /TN \"" + TaskName + "\" /TR \"" + exePath + "\""
+            // 动作只写 exe、不带参数：无参数运行 = 立即连接（自带重试），唤醒/登录后正合适；
+            // 同时避开 schtasks 对带空格的 /TR 命令行的解析差异。
+            string args = "/Create /TN \"" + name + "\" /TR \"" + exePath + "\""
                         + " /SC ONEVENT /EC System /MO \"" + filter + "\" /F /RL LIMITED";
-            if (Run(args, false) == 0) { Engine.Log("已创建唤醒重连任务：" + TaskName); return true; }
-            Engine.Log("创建唤醒重连任务失败（可能被安全软件拦截）");
+            if (Run(args, false) == 0) { Engine.Log("已创建自动任务：" + name); return true; }
+            Engine.Log("创建自动任务失败（可能被安全软件拦截）：" + name);
             return false;
         }
 
-        public static bool Delete()
+        public static bool Delete(string name)
         {
-            bool ok = Run("/Delete /TN \"" + TaskName + "\" /F", false) == 0;
-            if (ok) Engine.Log("已删除唤醒重连任务：" + TaskName);
+            bool ok = Run("/Delete /TN \"" + name + "\" /F", false) == 0;
+            if (ok) Engine.Log("已删除自动任务：" + name);
             return ok;
         }
 
-        /// <summary>按配置把任务状态同步成 on / off</summary>
+        /// <summary>把两个任务的状态同步成 on / off</summary>
         public static void Sync(bool on)
         {
-            if (on) { if (!Exists()) Create(AppEnv.LoginExePath); }
-            else { if (Exists()) Delete(); }
+            if (on)
+            {
+                if (!WakeExists()) CreateWake(AppEnv.LoginExePath);
+                if (!LogonExists()) CreateLogon(AppEnv.LoginExePath);
+            }
+            else
+            {
+                if (WakeExists()) Delete(WakeName);
+                if (LogonExists()) Delete(LogonName);
+            }
         }
 
         /// <summary>

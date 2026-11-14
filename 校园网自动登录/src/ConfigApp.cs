@@ -83,7 +83,7 @@ namespace CampusNet
             g2.Controls.Add(chkAutoStart);
 
             chkWake = new CheckBox();
-            chkWake.Text = "睡眠/休眠唤醒后自动重连（创建计划任务，不需要管理员）";
+            chkWake.Text = "开机登录 + 睡眠唤醒都自动重连（用计划任务，免管理员）";
             chkWake.Location = new Point(16, 50);
             chkWake.Size = new Size(470, 22);
             chkWake.CheckedChanged += OnWakeChanged;
@@ -256,7 +256,7 @@ namespace CampusNet
             numDelay.Value = Clamp(c.DelaySeconds, 0, 600);
             numRetry.Value = Clamp(c.MaxRetry, 1, 100);
             numInterval.Value = Clamp(c.RetryIntervalSeconds, 1, 600);
-            chkWake.Checked = WakeTask.Exists();
+            chkWake.Checked = AutoTasks.AllExist();
             chkSkipOnline.Checked = c.SkipIfOnline;
             txtServer.Text = c.Server;
             int mi = Array.IndexOf(MethodValues, c.Method);
@@ -337,24 +337,19 @@ namespace CampusNet
             if (busy) return;
             if (chkWake.Checked)
             {
-                if (WakeTask.Exists())
-                {
-                    SetState("唤醒重连任务已存在", Color.FromArgb(0, 120, 60));
-                }
-                else if (WakeTask.Create(AppEnv.LoginExePath))
-                {
-                    SetState("已创建唤醒重连任务（睡眠唤醒后会自动连接）", Color.FromArgb(0, 120, 60));
-                }
+                AutoTasks.Sync(true);
+                if (AutoTasks.AllExist())
+                    SetState("已启用：开机登录与睡眠唤醒都会自动连接", Color.FromArgb(0, 120, 60));
                 else
                 {
                     chkWake.Checked = false;
-                    SetState("创建失败：可右键以管理员身份运行本程序，或按 README 手动建计划任务", Color.FromArgb(190, 30, 30));
+                    SetState("创建计划任务失败（可能被安全软件拦截），可尝试以管理员身份运行", Color.FromArgb(190, 30, 30));
                 }
             }
             else
             {
-                WakeTask.Delete();
-                SetState("已删除唤醒重连任务", Color.FromArgb(110, 110, 110));
+                AutoTasks.Sync(false);
+                SetState("已关闭计划任务（开机自启仍由注册表项负责）", Color.FromArgb(110, 110, 110));
             }
             try { ConfigStore.Save(ReadUi()); } catch { }
         }
@@ -372,7 +367,8 @@ namespace CampusNet
             {
                 ConfigStore.Save(c);
                 AutoStart.Sync(c.AutoStart);
-                WakeTask.Sync(c.WakeReconnect);
+                // 注意：这里不碰计划任务。任务的建立/删除只由勾选框的切换触发，
+                // 免得"读取任务状态失败"时把已有的任务误删。
                 cfg = c;
                 SetState("已保存到 config.ini（" + DateTime.Now.ToString("HH:mm:ss") + "）", Color.FromArgb(0, 120, 60));
             }
@@ -468,7 +464,7 @@ namespace CampusNet
             sb.AppendLine("Method=" + MethodValues[cmbMethod.SelectedIndex]);
             sb.AppendLine("SelfUrl=" + txtSelfUrl.Text);
             sb.AppendLine("NotifyRetry=" + numNotifyRetry.Value.ToString() + "/" + numNotifyInterval.Value.ToString() + "s");
-            sb.AppendLine("WakeTaskChecked=" + chkWake.Checked.ToString() + " TaskExists=" + WakeTask.Exists().ToString());
+            sb.AppendLine("WakeChecked=" + chkWake.Checked.ToString() + " Wake=" + AutoTasks.WakeExists().ToString() + " Logon=" + AutoTasks.LogonExists().ToString());
             sb.AppendLine("AutoStartReg=" + AutoStart.IsEnabled().ToString());
             sb.AppendLine("ConfigPath=" + AppEnv.ConfigPath);
             sb.AppendLine("LoginExe=" + AppEnv.LoginExePath);

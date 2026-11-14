@@ -216,9 +216,12 @@ HKEY_CURRENT_USER\Software\Microsoft\Windows\CurrentVersion\Run
 
 > **睡眠/休眠唤醒不会触发自启**。`HKCU\...\Run` 只在**登录 Windows** 时执行，合盖唤醒、休眠恢复都不会跑。
 > 想让唤醒后也自动重连，在配置工具里勾选 ☑ **睡眠/休眠唤醒后自动重连** 即可：
-> 程序会创建一个计划任务 `CampusNetAutoLogin_Wake`（触发器 = `System` 日志里 `Microsoft-Windows-Kernel-Power` 事件 `107`，
-> 即"从睡眠恢复"；以当前用户身份、最低权限运行，不需要管理员、不需要密码），取消勾选就删除。
-> 如果创建失败（被安全软件拦截），可按同样参数在「任务计划程序」里手动建一个。
+> 程序会创建两个计划任务（都不需要管理员、不需要密码，取消勾选即删除）：
+> - `CampusNetAutoLogin_Wake`：睡眠/休眠唤醒时触发（`Kernel-Power` 107 传统睡眠 / 507 新型待机 / `Power-Troubleshooter` 1）
+> - `CampusNetAutoLogin_Logon`：用户登录时触发（`Winlogon` 7001），作为注册表自启项失效时的兜底
+>
+> 两个任务的动作都是直接运行 `校园网登录.exe`（不带参数=立即连接，自带重试）；
+> 程序内有单实例互斥 + "已在线则跳过"，所以两路同时触发也不会重复登录。
 
 ## .exe 映射（鼠标宏 / 快捷键）
 
