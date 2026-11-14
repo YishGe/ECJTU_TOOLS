@@ -24,7 +24,7 @@ namespace CampusNet
 
         NetConfig cfg;
         TextBox txtAccount, txtPassword, txtServer, txtStatus, txtSelfUrl;
-        CheckBox chkShow, chkAutoStart, chkSkipOnline;
+        CheckBox chkShow, chkAutoStart, chkSkipOnline, chkWake;
         ComboBox cmbIsp, cmbMethod;
         NumericUpDown numDelay, numRetry, numInterval, numNotifyRetry, numNotifyInterval;
         Button btnTest, btnSave, btnLog, btnClose;
@@ -48,7 +48,7 @@ namespace CampusNet
             MaximizeBox = false;
             MinimizeBox = false;
             StartPosition = FormStartPosition.CenterScreen;
-            ClientSize = new Size(552, 652);
+            ClientSize = new Size(552, 676);
             BackColor = Color.FromArgb(246, 247, 249);
 
             GroupBox g1 = NewGroup("账户", 16, 12, 520, 150);
@@ -74,7 +74,7 @@ namespace CampusNet
             cmbIsp.Items.AddRange(IspNames);
             g1.Controls.Add(cmbIsp);
 
-            GroupBox g2 = NewGroup("启动与重试", 16, 170, 520, 168);
+            GroupBox g2 = NewGroup("启动与重试", 16, 170, 520, 192);
             chkAutoStart = new CheckBox();
             chkAutoStart.Text = "开机自动登录（登录 Windows 后自动连接校园网）";
             chkAutoStart.Location = new Point(16, 24);
@@ -82,39 +82,46 @@ namespace CampusNet
             chkAutoStart.CheckedChanged += OnAutoStartChanged;
             g2.Controls.Add(chkAutoStart);
 
-            g2.Controls.Add(NewLabel("开机延时", 16, 60, 60));
-            numDelay = NewNum(80, 56, 64, 0, 600, 6);
+            chkWake = new CheckBox();
+            chkWake.Text = "睡眠/休眠唤醒后自动重连（创建计划任务，不需要管理员）";
+            chkWake.Location = new Point(16, 50);
+            chkWake.Size = new Size(470, 22);
+            chkWake.CheckedChanged += OnWakeChanged;
+            g2.Controls.Add(chkWake);
+
+            g2.Controls.Add(NewLabel("开机延时", 16, 86, 60));
+            numDelay = NewNum(80, 82, 64, 0, 600, 6);
             g2.Controls.Add(numDelay);
-            g2.Controls.Add(NewLabel("秒", 148, 60, 20));
+            g2.Controls.Add(NewLabel("秒", 148, 86, 20));
 
-            g2.Controls.Add(NewLabel("重试上限", 186, 60, 60));
-            numRetry = NewNum(250, 56, 56, 1, 100, 10);
+            g2.Controls.Add(NewLabel("重试上限", 186, 86, 60));
+            numRetry = NewNum(250, 82, 56, 1, 100, 10);
             g2.Controls.Add(numRetry);
-            g2.Controls.Add(NewLabel("次", 310, 60, 20));
+            g2.Controls.Add(NewLabel("次", 310, 86, 20));
 
-            g2.Controls.Add(NewLabel("重试间隔", 348, 60, 60));
-            numInterval = NewNum(412, 56, 56, 1, 600, 5);
+            g2.Controls.Add(NewLabel("重试间隔", 348, 86, 60));
+            numInterval = NewNum(412, 82, 56, 1, 600, 5);
             g2.Controls.Add(numInterval);
-            g2.Controls.Add(NewLabel("秒", 472, 60, 20));
+            g2.Controls.Add(NewLabel("秒", 472, 86, 20));
 
             chkSkipOnline = new CheckBox();
             chkSkipOnline.Text = "检测到已在线时跳过登录（避免把在线会话踢掉）";
-            chkSkipOnline.Location = new Point(16, 92);
+            chkSkipOnline.Location = new Point(16, 118);
             chkSkipOnline.Size = new Size(460, 22);
             g2.Controls.Add(chkSkipOnline);
 
-            g2.Controls.Add(NewLabel("认证服务器", 16, 126, 74));
-            txtServer = NewText(92, 122, 150, false);
+            g2.Controls.Add(NewLabel("认证服务器", 16, 152, 74));
+            txtServer = NewText(92, 148, 150, false);
             g2.Controls.Add(txtServer);
-            g2.Controls.Add(NewLabel("认证方式", 260, 126, 64));
+            g2.Controls.Add(NewLabel("认证方式", 260, 152, 64));
             cmbMethod = new ComboBox();
             cmbMethod.DropDownStyle = ComboBoxStyle.DropDownList;
-            cmbMethod.Location = new Point(324, 122);
+            cmbMethod.Location = new Point(324, 148);
             cmbMethod.Size = new Size(180, 24);
             cmbMethod.Items.AddRange(MethodNames);
             g2.Controls.Add(cmbMethod);
 
-            GroupBox g3 = NewGroup("062 超限处理", 16, 346, 520, 128);
+            GroupBox g3 = NewGroup("062 超限处理", 16, 370, 520, 128);
             g3.Controls.Add(NewLabel("自助服务地址", 16, 26, 88));
             txtSelfUrl = NewText(112, 22, 396, false);
             g3.Controls.Add(txtSelfUrl);
@@ -135,7 +142,7 @@ namespace CampusNet
             g3.Controls.Add(numNotifyInterval);
             g3.Controls.Add(NewLabel("秒", 262, 92, 20));
 
-            GroupBox g4 = NewGroup("状态", 16, 482, 520, 110);
+            GroupBox g4 = NewGroup("状态", 16, 506, 520, 110);
             lblState = new Label();
             lblState.Text = "就绪";
             lblState.ForeColor = Color.FromArgb(110, 110, 110);
@@ -153,13 +160,13 @@ namespace CampusNet
             txtStatus.Font = new Font("Consolas", 8.5F);
             g4.Controls.Add(txtStatus);
 
-            btnTest = NewButton("立即测试登录", 16, 604, 132);
+            btnTest = NewButton("立即测试登录", 16, 628, 132);
             btnTest.Click += OnTest;
-            btnSave = NewButton("保存设置", 156, 604, 96);
+            btnSave = NewButton("保存设置", 156, 628, 96);
             btnSave.Click += OnSave;
-            btnLog = NewButton("查看日志", 260, 604, 96);
+            btnLog = NewButton("查看日志", 260, 628, 96);
             btnLog.Click += OnOpenLog;
-            btnClose = NewButton("关闭", 448, 604, 88);
+            btnClose = NewButton("关闭", 448, 628, 88);
             btnClose.Click += delegate { Close(); };
 
             Controls.Add(g1);
@@ -249,6 +256,7 @@ namespace CampusNet
             numDelay.Value = Clamp(c.DelaySeconds, 0, 600);
             numRetry.Value = Clamp(c.MaxRetry, 1, 100);
             numInterval.Value = Clamp(c.RetryIntervalSeconds, 1, 600);
+            chkWake.Checked = WakeTask.Exists();
             chkSkipOnline.Checked = c.SkipIfOnline;
             txtServer.Text = c.Server;
             int mi = Array.IndexOf(MethodValues, c.Method);
@@ -284,6 +292,7 @@ namespace CampusNet
             c.SelfUrl = txtSelfUrl.Text.Trim().Length == 0 ? "http://192.168.1.1:8080/Self/dashboard" : txtSelfUrl.Text.Trim();
             c.NotifyRetryCount = (int)numNotifyRetry.Value;
             c.NotifyRetryInterval = (int)numNotifyInterval.Value;
+            c.WakeReconnect = chkWake.Checked;
             return c;
         }
 
@@ -323,6 +332,33 @@ namespace CampusNet
             }
         }
 
+        void OnWakeChanged(object sender, EventArgs e)
+        {
+            if (busy) return;
+            if (chkWake.Checked)
+            {
+                if (WakeTask.Exists())
+                {
+                    SetState("唤醒重连任务已存在", Color.FromArgb(0, 120, 60));
+                }
+                else if (WakeTask.Create(AppEnv.LoginExePath))
+                {
+                    SetState("已创建唤醒重连任务（睡眠唤醒后会自动连接）", Color.FromArgb(0, 120, 60));
+                }
+                else
+                {
+                    chkWake.Checked = false;
+                    SetState("创建失败：可右键以管理员身份运行本程序，或按 README 手动建计划任务", Color.FromArgb(190, 30, 30));
+                }
+            }
+            else
+            {
+                WakeTask.Delete();
+                SetState("已删除唤醒重连任务", Color.FromArgb(110, 110, 110));
+            }
+            try { ConfigStore.Save(ReadUi()); } catch { }
+        }
+
         void OnSave(object sender, EventArgs e)
         {
             NetConfig c = ReadUi();
@@ -336,6 +372,7 @@ namespace CampusNet
             {
                 ConfigStore.Save(c);
                 AutoStart.Sync(c.AutoStart);
+                WakeTask.Sync(c.WakeReconnect);
                 cfg = c;
                 SetState("已保存到 config.ini（" + DateTime.Now.ToString("HH:mm:ss") + "）", Color.FromArgb(0, 120, 60));
             }
@@ -431,6 +468,7 @@ namespace CampusNet
             sb.AppendLine("Method=" + MethodValues[cmbMethod.SelectedIndex]);
             sb.AppendLine("SelfUrl=" + txtSelfUrl.Text);
             sb.AppendLine("NotifyRetry=" + numNotifyRetry.Value.ToString() + "/" + numNotifyInterval.Value.ToString() + "s");
+            sb.AppendLine("WakeTaskChecked=" + chkWake.Checked.ToString() + " TaskExists=" + WakeTask.Exists().ToString());
             sb.AppendLine("AutoStartReg=" + AutoStart.IsEnabled().ToString());
             sb.AppendLine("ConfigPath=" + AppEnv.ConfigPath);
             sb.AppendLine("LoginExe=" + AppEnv.LoginExePath);

@@ -34,6 +34,7 @@ namespace CampusNet
         public string Mac = "";                 // 手动指定本机 MAC，留空=自动识别
         public string AcIp = "";                // wlanacip（AC 地址），留空=null
         public string AcName = "";              // wlanacname（AC 名称），留空=null
+        public bool WakeReconnect = false;      // 睡眠唤醒后自动重连（计划任务）
 
         public string AccountWithIsp
         {
@@ -96,6 +97,7 @@ namespace CampusNet
             c.Mac = Get(d, "本机MAC", "").Trim();
             c.AcIp = Get(d, "AC地址", "").Trim();
             c.AcName = Get(d, "AC名称", "").Trim();
+            c.WakeReconnect = ParseBool(Get(d, "唤醒重连", "0"), false);
             return c;
         }
 
@@ -120,6 +122,7 @@ namespace CampusNet
             sb.AppendLine("本机MAC=" + (c.Mac ?? ""));
             sb.AppendLine("AC地址=" + (c.AcIp ?? ""));
             sb.AppendLine("AC名称=" + (c.AcName ?? ""));
+            sb.AppendLine("唤醒重连=" + (c.WakeReconnect ? "1" : "0"));
             File.WriteAllText(AppEnv.ConfigPath, sb.ToString(), new UTF8Encoding(true));
         }
 
@@ -291,6 +294,77 @@ namespace CampusNet
         }
     }
 
+    /// <summary>
+    /// "睡眠唤醒后自动重连"的计划任务：监听 System 日志里 Kernel-Power 事件 107（从睡眠恢复）。
+    /// 用 schtasks.exe 注册，不需要管理员权限（InteractiveToken / LeastPrivilege），可随时删除。
+    /// </summary>
+    public static class WakeTask
+    {
+        public const string TaskName = "CampusNetAutoLogin_Wake";
+
+        /// <summary>唤醒事件过滤器：覆盖传统睡眠(107)、新型待机(507)、以及通用的低功耗恢复(1)</summary>
+        public const string WakeFilter =
+            "*[System[(Provider[@Name='Microsoft-Windows-Kernel-Power'] and (EventID=107 or EventID=507))" +
+            " or (Provider[@Name='Microsoft-Windows-Power-Troubleshooter'] and EventID=1)]]";
+
+        public static bool Exists()
+        {
+            return Run("/Query /TN \"" + TaskName + "\"", true) == 0;
+        }
+
+        public static bool Create(string exePath)
+        {
+            // 107 = 传统 S3 睡眠恢复；507 = 退出"新型待机"(Modern Standby/S0ix)；
+            // Power-Troubleshooter 1 = 从低功耗状态恢复的通用事件。三个都监听才能覆盖各种机型。
+            string filter = WakeFilter;
+            // 注意：动作只写 exe，不带任何参数。
+            // 一是"无参数运行"本来就是立即连接模式，唤醒后正合适；
+            // 二是 schtasks 对带空格的 /TR 命令行解析很挑，去掉参数后引号问题彻底消失。
+            string args = "/Create /TN \"" + TaskName + "\" /TR \"" + exePath + "\""
+                        + " /SC ONEVENT /EC System /MO \"" + filter + "\" /F /RL LIMITED";
+            if (Run(args, false) == 0) { Engine.Log("已创建唤醒重连任务：" + TaskName); return true; }
+            Engine.Log("创建唤醒重连任务失败（可能被安全软件拦截）");
+            return false;
+        }
+
+        public static bool Delete()
+        {
+            bool ok = Run("/Delete /TN \"" + TaskName + "\" /F", false) == 0;
+            if (ok) Engine.Log("已删除唤醒重连任务：" + TaskName);
+            return ok;
+        }
+
+        /// <summary>按配置把任务状态同步成 on / off</summary>
+        public static void Sync(bool on)
+        {
+            if (on) { if (!Exists()) Create(AppEnv.LoginExePath); }
+            else { if (Exists()) Delete(); }
+        }
+
+        /// <summary>
+        /// 调 schtasks。故意不重定向输出：某些受限环境下管道会让子进程直接失败，
+        /// 而我们只需要退出码（0=成功）。
+        /// </summary>
+        static int Run(string args, bool quiet)
+        {
+            try
+            {
+                ProcessStartInfo psi = new ProcessStartInfo("schtasks.exe", args);
+                psi.UseShellExecute = false;
+                psi.CreateNoWindow = true;
+                psi.RedirectStandardOutput = false;
+                psi.RedirectStandardError = false;
+                psi.WindowStyle = ProcessWindowStyle.Hidden;
+                using (Process p = Process.Start(psi))
+                {
+                    if (!p.WaitForExit(10000)) { try { p.Kill(); } catch { } return -1; }
+                    if (p.ExitCode != 0 && !quiet) Engine.Log("schtasks " + args + " 失败，退出码 " + p.ExitCode);
+                    return p.ExitCode;
+                }
+            }
+            catch (Exception ex) { if (!quiet) Engine.Log("schtasks 异常：" + ex.Message); return -1; }
+        }
+    }
     internal class HttpResult
     {
         public int Status = 0;
@@ -913,7 +987,22 @@ namespace CampusNet
                 if (IsOnline())
                     return LoginOutcome.Online("已在线（认证页暂时打不开，但网络是通的）");
                 string disc = DiscoverBase(5000);
-                if (disc != null) info = Probe(disc, 6000, out err);
+                if (disc != null)
+                {
+                    // 把发现到的门户地址记回配置：下次开机直接连，省掉一次超时，也不用用户手填
+                    try
+                    {
+                        string host = new Uri(disc).Authority;
+                        if (host.Length > 0 && !string.Equals(host, c.Server, StringComparison.OrdinalIgnoreCase))
+                        {
+                            c.Server = host;
+                            ConfigStore.Save(c);
+                            Log("已把认证服务器地址记入配置：" + host);
+                        }
+                    }
+                    catch (Exception ex) { Log("记录认证服务器地址失败：" + ex.Message); }
+                    info = Probe(disc, 6000, out err);
+                }
             }
             if (info == null) return LoginOutcome.Fail("无法访问认证服务器（网络可能还没连上）");
 
@@ -1057,10 +1146,17 @@ namespace CampusNet
         // ---------------- 主流程（带延时与重试） ----------------
         public static int Run(bool bootMode)
         {
+            // 第一行就落盘：以后"进程到底有没有被启动"永远有据可查
+            Log("---- 进程启动（" + (bootMode ? "--boot 开机模式" : "手动") + "）pid="
+                + Process.GetCurrentProcess().Id.ToString() + " ----");
             bool created;
             using (Mutex mtx = new Mutex(true, "CampusNetAutoLogin_Mutex", out created))
             {
-                if (!created) return 0;         // 已有实例在跑，直接退出
+                if (!created)
+                {
+                    Log("已有实例在运行，本次退出（不重复登录）");
+                    return 0;
+                }
                 try { return RunCore(bootMode); }
                 catch (Exception ex) { Log("运行异常：" + ex.ToString()); return 1; }
             }
